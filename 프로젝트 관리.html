@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 페이지 | 의뢰 현황 실시간 감시</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #f3f4f6; font-family: 'Noto Sans KR', sans-serif; }
+        /* 새 의뢰가 올 때 깜빡이는 효과 */
+        .new-row { animation: highlight 2s ease-out; }
+        @keyframes highlight {
+            0% { background-color: #dbeafe; }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <header class="flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                    🚀 프로젝트 의뢰 관리 현황
+                </h1>
+                <p class="text-sm text-gray-500 mt-1">실시간으로 새로운 의뢰를 감시하고 있습니다.</p>
+            </div>
+            <div id="status" class="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-full text-sm font-bold">
+                <span class="relative flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+                실시간 연결 중
+            </div>
+        </header>
+
+        <div class="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-200">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-6 py-4 text-sm font-semibold text-gray-600">접수일시</th>
+                            <th class="px-6 py-4 text-sm font-semibold text-gray-600">회사 / 성함</th>
+                            <th class="px-6 py-4 text-sm font-semibold text-gray-600">연락처 / 이메일</th>
+                            <th class="px-6 py-4 text-sm font-semibold text-gray-600">예산</th>
+                            <th class="px-6 py-4 text-sm font-semibold text-gray-600 text-center">상세내용</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestList" class="divide-y divide-gray-100">
+                        <tr>
+                            <td colspan="5" class="px-6 py-12 text-center text-gray-400">
+                                데이터를 불러오는 중입니다...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="detailModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl">
+            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                <span class="text-blue-600">📝</span> 의뢰 상세 내용
+            </h3>
+            <div id="modalContent" class="text-gray-700 leading-relaxed whitespace-pre-wrap bg-gray-50 p-4 rounded-xl text-sm max-h-[400px] overflow-y-auto">
+            </div>
+            <button onclick="closeModal()" class="w-full mt-6 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors">
+                닫기
+            </button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "7cbb43acef7fabda7bab284b317b06c2c56a4c39",
+            authDomain: "imyeontest.firebaseapp.com",
+            databaseURL: "https://imyeontest-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "imyeontest",
+            storageBucket: "imyeontest.firebasestorage.app",
+            messagingSenderId: "55529187023",
+            appId: "1:55529187023:web:de07ae1f7ce459e36079ba",
+            measurementId: "G-K4WGRY1XQ5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
+        
+        onSnapshot(q, (snapshot) => {
+            const listBody = document.getElementById('requestList');
+            listBody.innerHTML = ''; 
+
+            if (snapshot.empty) {
+                listBody.innerHTML = '<tr><td colspan="5" class="px-6 py-12 text-center text-gray-400">접수된 의뢰가 아직 없습니다.</td></tr>';
+                return;
+            }
+
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const date = data.createdAt?.toDate().toLocaleString() || '방금 전';
+                
+                // 상세정보 합치기 (소개 + URL + 이유)
+                let fullDetail = `[회사 및 비즈니스 소개]\n${data.intro || '미입력'}\n\n`;
+                fullDetail += `[참고 URL]\n${data.refUrl || '미입력'}\n\n`;
+                fullDetail += `[의뢰 이유]\n${data.reason || '미입력'}`;
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50 transition-colors new-row";
+                tr.innerHTML = `
+                    <td class="px-6 py-4 text-sm text-gray-500">${date}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-bold text-gray-900">${data.company || '미입력'}</div>
+                        <div class="text-xs text-gray-500">${data.name || '미입력'}</div>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-600">
+                        <div>${data.tel || data.contact || '미입력'}</div>
+                        <div class="text-xs text-blue-500 underline">${data.email || '미입력'}</div>
+                    </td>
+                    <td class="px-6 py-4 text-sm font-medium text-blue-600">${data.budget || '미정'}</td>
+                    <td class="px-6 py-4 text-center">
+                        <button class="view-btn text-xs bg-blue-50 text-blue-600 px-4 py-2 rounded-full font-bold hover:bg-blue-100 transition-colors" 
+                                data-full="${fullDetail.replace(/"/g, '&quot;')}">
+                            상세보기
+                        </button>
+                    </td>
+                `;
+                listBody.appendChild(tr);
+            });
+
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.onclick = () => openModal(btn.getAttribute('data-full'));
+            });
+
+            if (Notification.permission === "granted" && snapshot.docChanges().some(change => change.type === "added")) {
+                new Notification("🔔 새로운 의뢰가 도착했습니다!", {
+                    body: "관리자 페이지를 확인해 주세요."
+                });
+            }
+        });
+
+        window.openModal = (text) => {
+            document.getElementById('modalContent').innerText = text;
+            document.getElementById('detailModal').style.display = 'flex';
+        };
+        window.closeModal = () => {
+            document.getElementById('detailModal').style.display = 'none';
+        };
+
+        if (Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
+    </script>
+</body>
+</html>
